@@ -58,6 +58,13 @@ brightness/intensity and sRGB encoding applied. Turn it off (checkbox or `V`) fo
 The palette is generated in `src/palette.js` from OKLCh ramps (hue-shifted shadows/highlights) and gamut-mapped
 into sRGB; the module throws if it ever exceeds 64 entries.
 
+**Tilt-shift lens** (off by default; checkbox or `T`) works in both modes and gives the diorama a miniature-model look.
+Once the scene is rendered, a separable Gaussian blur whose radius grows with distance from an adjustable horizontal focus
+band runs before the final pass: the horizontal pass writes an intermediate target and the final pass does the vertical
+one, so it costs nothing when off. The blur works on premultiplied linear colour with alpha as coverage, so softened
+silhouettes fade into the sky. In pixel mode it runs at art-pixel resolution before palette quantisation: blurred rows
+drop their outlines and dither wider where the blur changed a pixel, so the result stays inside the 64 colours.
+
 ## Controls
 
 | Control | Action |
@@ -68,6 +75,8 @@ into sRGB; the module throws if it ever exceeds 64 entries.
 | Zoom slider / mouse wheel / `+` `-` | Orthographic zoom (0.6×–6×) |
 | ⟲ / ⟳ / `Q` `E` | Rotate 90°, always landing on a true-isometric angle |
 | Follow coaster cars / `F` | Camera tracks the middle car (stays orthographic isometric; panning releases it) |
+| Tilt-shift lens / `T` | Miniature-model blur above and below a sharp focus band (works in raw 3D and pixel mode) |
+| Blur, Focus position, Focus width | Tilt-shift strength, height of the sharp band (0% bottom – 100% top) and its width; enabled while the lens is on |
 | Drag / right-drag (or shift-drag) | Orbit (snaps back to isometric on release) / pan |
 | **Reset view** / `R` | Fit the whole diorama (also stops following) |
 | Raw 3D / `V` | Bypass the pixel filter: full-resolution MSAA render with no palette, outlines or dither (on by default; turn it off for the pixel-art look) |
@@ -82,7 +91,7 @@ into sRGB; the module throws if it ever exceeds 64 entries.
 index.html            UI shell + side panel
 src/main.js           renderer, lights, world assembly, UI wiring, main loop
 src/palette.js        OKLab maths and the 64-colour palette
-src/post.js           low-res target, outlines, OKLab quantisation
+src/post.js           low-res target, outlines, OKLab quantisation, tilt-shift blur
 src/voxels.js         static/dynamic instanced box batches (one draw call each)
 src/track.js          heartline integrator, frames, arc-length lookup
 src/layout.js         the Hammerhead element list

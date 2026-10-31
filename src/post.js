@@ -9,6 +9,54 @@ const vertexShader = /* glsl */ `
   }
 `;
 
+// Tilt-shift: a horizontal band around tiltFocus stays sharp and a Gaussian blur grows above and below it. The blur is
+// separable: a pass over the scene target blurs horizontally into tTilt, and the final pass blurs that vertically.
+// Colour is premultiplied (alpha = coverage), so blurred silhouettes fade into the sky instead of haloing.
+const tiltGlsl = /* glsl */ `
+  #define TILT_TAPS 16
+  #define TILT_RAMP 0.35
+  #define TILT_MIN_SIGMA 0.3
+  uniform float tiltBlur;
+  uniform float tiltFocus;
+  uniform float tiltBand;
+
+  // Blur sigma in render-target pixels at screen height y (0 = bottom, 1 = top).
+  float tiltSigma(float y, float texelY) {
+    float t = clamp((abs(y - tiltFocus) - tiltBand) / TILT_RAMP, 0.0, 1.0);
+    return tiltBlur * (t * t * (3.0 - 2.0 * t)) / texelY;
+  }
+
+  // One axis of the Gaussian; px is the uv size of one pixel along that axis. Explicit-LOD fetches keep the
+  // data-dependent loop legal on every GL backend.
+  vec4 tiltGather(sampler2D tex, vec2 uv, vec2 px, float sigma) {
+    vec4 sum = textureLod(tex, uv, 0.0);
+    if (sigma < TILT_MIN_SIGMA) return sum;
+    // Taps reach 3 sigma. Beyond a stride of one pixel each tap straddles two texels, so linear filtering folds them together.
+    float stride = max(1.0, 3.0 * sigma / float(TILT_TAPS));
+    float wsum = 1.0;
+    for (int i = 1; i <= TILT_TAPS; i++) {
+      float o = float(i) * stride - 0.5 * (stride - 1.0);
+      if (o > 3.0 * sigma) break;
+      float w = stride * exp(-0.5 * o * o / (sigma * sigma));
+      sum += w * (textureLod(tex, uv + px * o, 0.0) + textureLod(tex, uv - px * o, 0.0));
+      wsum += 2.0 * w;
+    }
+    return sum / wsum;
+  }
+`;
+
+const tiltFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform sampler2D tSrc;
+  uniform vec2 texel;
+  varying vec2 vUv;
+  ${tiltGlsl}
+
+  void main() {
+    gl_FragColor = tiltGather(tSrc, vUv, vec2(texel.x, 0.0), tiltSigma(vUv.y, texel.y));
+  }
+`;
+
 const fragmentShader = /* glsl */ `
   precision highp float;
   #define PAL_SIZE ${PALETTE.length}
@@ -16,7 +64,9 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D tColor;
   uniform sampler2D tDepth;
   uniform sampler2D tRaw;
+  uniform sampler2D tTilt;
   uniform float rawMode;
+  uniform float tiltOn;
   uniform vec3 skyTopLin;
   uniform vec3 skyBottomLin;
   uniform vec2 texel;
@@ -33,6 +83,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3 palRgb[PAL_SIZE];
   uniform vec3 inkRgb;
   varying vec2 vUv;
+  ${tiltGlsl}
 
   vec3 linearToOklab(vec3 c) {
     vec3 lms = vec3(
@@ -76,10 +127,16 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
+    // Blur radius for this row; zero when the lens is off or the row is inside the sharp band.
+    float sigma = tiltOn > 0.5 ? tiltSigma(vUv.y, texel.y) : 0.0;
+    bool blurred = sigma >= TILT_MIN_SIGMA;
+
     if (rawMode > 0.5) {
       // Raw 3D: full-resolution MSAA render, unquantised. The target is cleared to transparent black,
       // so alpha is coverage and the sky composites under anti-aliased edges.
-      vec4 s = texture2D(tRaw, vUv);
+      vec4 s;
+      if (blurred) s = tiltGather(tTilt, vUv, vec2(0.0, texel.y), sigma);
+      else s = texture2D(tRaw, vUv);
       vec3 c = shoulder(max(s.rgb * exposure, vec3(0.0)));
       vec3 lab = linearToOklab(c);
       lab.yz *= intensity;
@@ -90,15 +147,20 @@ const fragmentShader = /* glsl */ `
     }
 
     float raw = texture2D(tDepth, vUv).r;
-    vec3 lab;
-    if (raw >= 0.999999) {
-      lab = mix(skyBottom, skyTop, smoothstep(0.05, 0.95, vUv.y));
-    } else {
-      vec3 c = texture2D(tColor, vUv).rgb * exposure;
-      lab = linearToOklab(shoulder(c));
+    vec3 skyLab = mix(skyBottom, skyTop, smoothstep(0.05, 0.95, vUv.y));
+    vec3 lab = skyLab;
+    if (raw < 0.999999) lab = linearToOklab(shoulder(texture2D(tColor, vUv).rgb * exposure));
+    float smear = 0.0;
+    if (blurred) {
+      // Blurred rows come from the tilt target (premultiplied, alpha = coverage), so blend scene and sky by coverage.
+      vec4 s = tiltGather(tTilt, vUv, vec2(0.0, texel.y), sigma);
+      vec3 blurLab = mix(skyLab, linearToOklab(shoulder(s.rgb / max(s.a, 1e-4) * exposure)), s.a);
+      smear = distance(blurLab, lab);
+      lab = blurLab;
     }
     lab.yz *= intensity;
-    lab.x += (bayer4(gl_FragCoord.xy) - 0.5) * dither;
+    // Where the blur changed a pixel, dither wider so the smoothed gradient steps through the palette instead of snapping to it.
+    lab.x += (bayer4(gl_FragCoord.xy) - 0.5) * dither * (1.0 + 4.0 * smoothstep(0.03, 0.12, smear));
 
     vec3 outRgb = palRgb[0];
     float best = 1e9;
@@ -109,7 +171,8 @@ const fragmentShader = /* glsl */ `
       if (dist < best) { best = dist; outRgb = palRgb[i]; }
     }
 
-    if (outlineOn > 0.5) {
+    // Defocused rows lose their outlines.
+    if (outlineOn > 0.5 && sigma < 0.9) {
       float z = cameraNear + raw * (cameraFar - cameraNear);
       float zl = viewDepth(vUv - vec2(texel.x, 0.0));
       float zr = viewDepth(vUv + vec2(texel.x, 0.0));
@@ -147,11 +210,19 @@ export class PixelPipeline {
     });
     this.raw = false;
     this.rawTarget = null;
+    this.tilt = false;
+    this.tiltTarget = null;
     this.uniforms = {
       tColor: { value: this.target.texture },
       tDepth: { value: this.target.depthTexture },
       tRaw: { value: null },
+      tTilt: { value: null },
       rawMode: { value: 0 },
+      tiltOn: { value: 0 },
+      // Defaults mirror the tilt-shift sliders in index.html (60% blur, 50% position, 30% width).
+      tiltBlur: { value: 0.0084 }, // sigma at the far edge of the ramp, as a fraction of the render height
+      tiltFocus: { value: 0.5 }, // height of the focus line: 0 = bottom, 1 = top
+      tiltBand: { value: 0.15 }, // half the height of the fully sharp band
       skyTopLin: { value: skyTopLin },
       skyBottomLin: { value: skyBottomLin },
       texel: { value: new THREE.Vector2(1, 1) },
@@ -180,12 +251,32 @@ export class PixelPipeline {
     this.postScene = new THREE.Scene();
     this.postScene.add(this.quad);
     this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    // Horizontal tilt-shift pass; shares the lens uniforms with the final pass so one slider drives both.
+    this.tiltMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        tSrc: { value: null },
+        texel: this.uniforms.texel,
+        tiltBlur: this.uniforms.tiltBlur,
+        tiltFocus: this.uniforms.tiltFocus,
+        tiltBand: this.uniforms.tiltBand,
+      },
+      vertexShader,
+      fragmentShader: tiltFragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const tiltQuad = new THREE.Mesh(this.quad.geometry, this.tiltMaterial);
+    tiltQuad.frustumCulled = false;
+    this.tiltScene = new THREE.Scene();
+    this.tiltScene.add(tiltQuad);
   }
 
   /** Pixel mode renders at (width, height); raw mode renders the same size at full device resolution. */
   setSize(width, height) {
     this.width = width;
     this.height = height;
+    this.uniforms.texel.value.set(1 / width, 1 / height);
     if (this.raw) {
       if (!this.rawTarget) {
         this.rawTarget = new THREE.WebGLRenderTarget(width, height, {
@@ -199,13 +290,39 @@ export class PixelPipeline {
       this.rawTarget.setSize(width, height);
     } else {
       this.target.setSize(width, height);
-      this.uniforms.texel.value.set(1 / width, 1 / height);
     }
+    this.syncTiltTarget();
   }
 
   setRaw(raw) {
     this.raw = raw;
     this.uniforms.rawMode.value = raw ? 1 : 0;
+  }
+
+  /** Tilt-shift lens: blurs above and below a sharp focus band (tune via the tilt* uniforms). */
+  setTilt(on) {
+    this.tilt = on;
+    this.uniforms.tiltOn.value = on ? 1 : 0;
+    this.syncTiltTarget();
+  }
+
+  /** The horizontal-blur target only exists, at the current size, while the lens is on. */
+  syncTiltTarget() {
+    if (!this.tilt) {
+      this.tiltTarget?.dispose();
+      this.tiltTarget = null;
+      this.uniforms.tTilt.value = null;
+      return;
+    }
+    if (!this.tiltTarget) {
+      this.tiltTarget = new THREE.WebGLRenderTarget(this.width, this.height, {
+        type: THREE.HalfFloatType,
+        generateMipmaps: false,
+        depthBuffer: false,
+      });
+      this.uniforms.tTilt.value = this.tiltTarget.texture;
+    }
+    this.tiltTarget.setSize(this.width, this.height);
   }
 
   render(scene, camera, pixelWorld) {
@@ -214,8 +331,14 @@ export class PixelPipeline {
     this.uniforms.cameraFar.value = camera.far;
     // Planar surfaces change depth by at most ~1.5 px-widths per pixel in true isometric view.
     this.uniforms.outlineThreshold.value = Math.max(0.08, pixelWorld * 2.6);
-    r.setRenderTarget(this.raw ? this.rawTarget : this.target);
+    const sceneTarget = this.raw ? this.rawTarget : this.target;
+    r.setRenderTarget(sceneTarget);
     r.render(scene, camera);
+    if (this.tilt) {
+      this.tiltMaterial.uniforms.tSrc.value = sceneTarget.texture;
+      r.setRenderTarget(this.tiltTarget);
+      r.render(this.tiltScene, this.postCamera);
+    }
     r.setRenderTarget(null);
     r.render(this.postScene, this.postCamera);
   }

@@ -52,7 +52,17 @@
             <button id="btn-reset" type="button" title="Reset view (R)">Reset view</button>
           </div>
           <label class="check"><input id="chk-follow" type="checkbox" /> Follow coaster cars</label>
-          <p class="hint">Orthographic true-isometric (35.26° / 45°). Drag to orbit (snaps back to isometric), right-drag to pan, wheel to zoom.</p>
+          <label class="check"><input id="chk-tilt" type="checkbox" /> Tilt-shift lens</label>
+          <label class="slider tilt-only">Blur <output id="out-tilt-blur">60%</output>
+            <input id="rng-tilt-blur" type="range" min="0" max="100" step="1" value="60" />
+          </label>
+          <label class="slider tilt-only">Focus position <output id="out-tilt-focus">50%</output>
+            <input id="rng-tilt-focus" type="range" min="10" max="90" step="1" value="50" />
+          </label>
+          <label class="slider tilt-only">Focus width <output id="out-tilt-width">30%</output>
+            <input id="rng-tilt-width" type="range" min="5" max="80" step="1" value="30" />
+          </label>
+          <p class="hint">Orthographic true-isometric (35.26° / 45°). Drag to orbit (snaps back to isometric), right-drag to pan, wheel to zoom. Tilt-shift blurs above and below a sharp focus band for a miniature-model look.</p>
         </div>
 
         <div class="card">
@@ -72,7 +82,7 @@
         </div>
 
 
-        <p class="keys">Keys: <kbd>Space</kbd> play/pause · <kbd>L</kbd> launch · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset · <kbd>F</kbd> follow · <kbd>O</kbd> outlines · <kbd>V</kbd> raw 3D</p>
+        <p class="keys">Keys: <kbd>Space</kbd> play/pause · <kbd>L</kbd> launch · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset · <kbd>F</kbd> follow · <kbd>T</kbd> tilt-shift · <kbd>O</kbd> outlines · <kbd>V</kbd> raw 3D</p>
       </aside>
     </main>
     <script type="module" src="./src/main.js"></script>

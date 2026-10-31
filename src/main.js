@@ -116,6 +116,7 @@ const state = {
   pixelSize: 2,
   raw: true,
   follow: false,
+  tilt: false,
   autoLaunch: false,
   autoTimer: 0,
   lowW: 1,
@@ -147,6 +148,13 @@ const ui = {
   zoom: $('rng-zoom'),
   zoomOut: $('out-zoom'),
   follow: $('chk-follow'),
+  tilt: $('chk-tilt'),
+  tiltBlur: $('rng-tilt-blur'),
+  tiltBlurOut: $('out-tilt-blur'),
+  tiltFocus: $('rng-tilt-focus'),
+  tiltFocusOut: $('out-tilt-focus'),
+  tiltWidth: $('rng-tilt-width'),
+  tiltWidthOut: $('out-tilt-width'),
   raw: $('chk-raw'),
   outline: $('chk-outline'),
   dither: $('chk-dither'),
@@ -195,11 +203,33 @@ function setRaw(on) {
   resize();
 }
 
+// Blur sigma at 100% strength, as a fraction of the render height.
+const TILT_MAX_SIGMA = 0.014;
+const tiltSliders = [ui.tiltBlur, ui.tiltFocus, ui.tiltWidth];
+function syncTiltParams() {
+  const u = pipeline.uniforms;
+  u.tiltBlur.value = (Number(ui.tiltBlur.value) / 100) * TILT_MAX_SIGMA;
+  u.tiltFocus.value = Number(ui.tiltFocus.value) / 100;
+  u.tiltBand.value = Number(ui.tiltWidth.value) / 200;
+  ui.tiltBlurOut.textContent = `${ui.tiltBlur.value}%`;
+  ui.tiltFocusOut.textContent = `${ui.tiltFocus.value}%`;
+  ui.tiltWidthOut.textContent = `${ui.tiltWidth.value}%`;
+}
+function setTilt(on) {
+  state.tilt = on;
+  ui.tilt.checked = on;
+  pipeline.setTilt(on);
+  document.body.classList.toggle('tilt', on);
+  for (const el of tiltSliders) el.disabled = !on;
+}
+
 ui.launch.addEventListener('click', launch);
 ui.play.addEventListener('click', togglePlay);
 ui.auto.addEventListener('change', () => (state.autoLaunch = ui.auto.checked));
 ui.zoom.addEventListener('input', () => iso.setZoom(Number(ui.zoom.value)));
 ui.follow.addEventListener('change', () => setFollow(ui.follow.checked));
+ui.tilt.addEventListener('change', () => setTilt(ui.tilt.checked));
+for (const el of tiltSliders) el.addEventListener('input', syncTiltParams);
 ui.raw.addEventListener('change', () => setRaw(ui.raw.checked));
 $('btn-rot-left').addEventListener('click', () => iso.rotate(-1));
 $('btn-rot-right').addEventListener('click', () => iso.rotate(1));
@@ -235,6 +265,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'e') iso.rotate(1);
   else if (k === 'r') resetView();
   else if (k === 'f') setFollow(!state.follow);
+  else if (k === 't') setTilt(!state.tilt);
   else if (k === 'v') setRaw(!state.raw);
   else if (k === 'o') {
     ui.outline.checked = !ui.outline.checked;
@@ -283,7 +314,9 @@ function updateUi() {
 }
 
 // ---- Main loop ----
-// Applies the default render mode to the UI and pipeline; setRaw ends with resize(), which sizes the render targets.
+// Applies the default lens and render mode to the UI and pipeline; setRaw ends with resize(), which sizes the render targets.
+syncTiltParams();
+setTilt(state.tilt);
 setRaw(state.raw);
 let lastNow = performance.now();
 let uiTimer = 0;
@@ -322,7 +355,7 @@ function frame() {
 }
 
 // Debug/automation hooks.
-window.__hammerhead = { train, people, iso, pipeline, track, launch, state, setRaw, setFollow, palette: PALETTE };
+window.__hammerhead = { train, people, iso, pipeline, track, launch, state, setRaw, setTilt, setFollow, palette: PALETTE };
 
 $('loading').remove();
 syncZoomUi();
