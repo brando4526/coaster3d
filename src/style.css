@@ -242,17 +242,6 @@ input[type='checkbox'] {
   accent-color: var(--teal);
 }
 
-#swatches {
-  display: grid;
-  grid-template-columns: repeat(16, 1fr);
-  gap: 2px;
-}
-
-#swatches span {
-  aspect-ratio: 1;
-  box-shadow: 0 0 0 1px var(--ink);
-}
-
 .hint {
   margin: 8px 0 0;
   color: var(--muted);

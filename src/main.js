@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PALETTE, PAL, hexToCss } from './palette.js';
+import { PALETTE, PAL } from './palette.js';
 import { PixelPipeline } from './post.js';
 import { StaticBoxes, DynamicBoxes } from './voxels.js';
 import { buildTrack } from './layout.js';
@@ -136,9 +136,7 @@ function resize() {
   pipeline.setSize(state.lowW, state.lowH);
   iso.setViewport(state.lowW, state.lowH);
   iso.fitBox(dioramaBox);
-  readBuf = state.raw ? null : new Uint8Array(state.lowW * state.lowH * 4);
 }
-let readBuf = null;
 new ResizeObserver(resize).observe(viewport);
 window.addEventListener('resize', resize);
 
@@ -164,17 +162,7 @@ const ui = {
   riders: $('stat-riders'),
   queue: $('stat-queue'),
   laps: $('stat-laps'),
-  colours: $('screen-colours'),
 };
-
-$('palette-count').textContent = String(PALETTE.length);
-const swatches = $('swatches');
-for (const p of PALETTE) {
-  const s = document.createElement('span');
-  s.style.background = hexToCss(p.hex);
-  s.title = `${p.name} ${hexToCss(p.hex)}`;
-  swatches.appendChild(s);
-}
 
 function launch() {
   if (people.dispatch()) state.autoTimer = 0;
@@ -204,8 +192,6 @@ function setRaw(on) {
   pipeline.setRaw(on);
   document.body.classList.toggle('raw', on);
   for (const el of [ui.outline, ui.dither, ui.pixel]) el.disabled = on;
-  ui.colours.textContent = on ? 'n/a in raw 3D' : '–';
-  colourTimer = 0.3;
   resize();
 }
 
@@ -296,19 +282,10 @@ function updateUi() {
   ui.laps.textContent = String(train.laps);
 }
 
-function countScreenColours() {
-  const gl = renderer.getContext();
-  gl.readPixels(0, 0, state.lowW, state.lowH, gl.RGBA, gl.UNSIGNED_BYTE, readBuf);
-  const seen = new Set();
-  for (let i = 0; i < readBuf.length; i += 4) seen.add((readBuf[i] << 16) | (readBuf[i + 1] << 8) | readBuf[i + 2]);
-  return seen;
-}
-
 // ---- Main loop ----
 resize();
 let lastNow = performance.now();
 let uiTimer = 0;
-let colourTimer = 0.5;
 function frame() {
   const now = performance.now();
   const dt = Math.min((now - lastNow) / 1000, 1 / 20);
@@ -335,13 +312,6 @@ function frame() {
   updateClouds(state.time);
   pipeline.render(scene, iso.camera, iso.pixelWorld);
 
-  colourTimer -= dt;
-  if (colourTimer <= 0 && !state.raw) {
-    colourTimer = 1;
-    const seen = countScreenColours();
-    ui.colours.textContent = `${seen.size} / ${PALETTE.length}`;
-    window.__hammerhead.lastColours = seen;
-  }
   uiTimer -= dt;
   if (uiTimer <= 0) {
     uiTimer = 0.1;
@@ -351,7 +321,7 @@ function frame() {
 }
 
 // Debug/automation hooks.
-window.__hammerhead = { train, people, iso, pipeline, track, launch, state, setRaw, setFollow, palette: PALETTE, lastColours: null };
+window.__hammerhead = { train, people, iso, pipeline, track, launch, state, setRaw, setFollow, palette: PALETTE };
 
 $('loading').remove();
 syncZoomUi();
