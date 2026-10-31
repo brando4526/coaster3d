@@ -34,7 +34,8 @@ renderer.setPixelRatio(1);
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.setClearColor(0x000000, 1);
+// Transparent clear: raw 3D mode uses alpha coverage to composite the sky under anti-aliased edges.
+renderer.setClearColor(0x000000, 0);
 
 const scene = new THREE.Scene();
 const pipeline = new PixelPipeline(renderer);
@@ -112,18 +113,21 @@ const dioramaBox = new THREE.Box3(new THREE.Vector3(BASE.x0, -3.9, BASE.z0), new
 const state = {
   playing: true,
   time: 0,
-  pixelSize: 3,
+  pixelSize: 2,
+  raw: false,
+  follow: false,
   autoLaunch: false,
   autoTimer: 0,
   lowW: 1,
   lowH: 1,
 };
 
+// lowW/lowH are the render resolution: art pixels in pixel mode, device pixels in raw 3D mode.
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const w = viewport.clientWidth;
   const h = viewport.clientHeight;
-  const px = Math.max(1, Math.round(state.pixelSize * dpr));
+  const px = state.raw ? 1 : Math.max(1, Math.round(state.pixelSize * dpr));
   state.lowW = Math.max(16, Math.ceil((w * dpr) / px));
   state.lowH = Math.max(16, Math.ceil((h * dpr) / px));
   renderer.setSize(state.lowW, state.lowH, false);
@@ -132,9 +136,9 @@ function resize() {
   pipeline.setSize(state.lowW, state.lowH);
   iso.setViewport(state.lowW, state.lowH);
   iso.fitBox(dioramaBox);
-  readBuf = new Uint8Array(state.lowW * state.lowH * 4);
+  readBuf = state.raw ? null : new Uint8Array(state.lowW * state.lowH * 4);
 }
-let readBuf = new Uint8Array(4);
+let readBuf = null;
 new ResizeObserver(resize).observe(viewport);
 window.addEventListener('resize', resize);
 
@@ -144,6 +148,8 @@ const ui = {
   auto: $('chk-auto'),
   zoom: $('rng-zoom'),
   zoomOut: $('out-zoom'),
+  follow: $('chk-follow'),
+  raw: $('chk-raw'),
   outline: $('chk-outline'),
   dither: $('chk-dither'),
   bright: $('rng-bright'),
@@ -184,13 +190,38 @@ function syncZoomUi() {
 }
 iso.onChange = syncZoomUi;
 
+function setFollow(on) {
+  state.follow = on;
+  ui.follow.checked = on;
+  if (on && iso.zoomTarget < 2.4) iso.setZoom(2.8);
+}
+// Manual panning takes the camera back from the follow cam.
+iso.onPanStart = () => setFollow(false);
+
+function setRaw(on) {
+  state.raw = on;
+  ui.raw.checked = on;
+  pipeline.setRaw(on);
+  document.body.classList.toggle('raw', on);
+  for (const el of [ui.outline, ui.dither, ui.pixel]) el.disabled = on;
+  ui.colours.textContent = on ? 'n/a in raw 3D' : '–';
+  colourTimer = 0.3;
+  resize();
+}
+
 ui.launch.addEventListener('click', launch);
 ui.play.addEventListener('click', togglePlay);
 ui.auto.addEventListener('change', () => (state.autoLaunch = ui.auto.checked));
 ui.zoom.addEventListener('input', () => iso.setZoom(Number(ui.zoom.value)));
+ui.follow.addEventListener('change', () => setFollow(ui.follow.checked));
+ui.raw.addEventListener('change', () => setRaw(ui.raw.checked));
 $('btn-rot-left').addEventListener('click', () => iso.rotate(-1));
 $('btn-rot-right').addEventListener('click', () => iso.rotate(1));
-$('btn-reset').addEventListener('click', () => iso.reset());
+function resetView() {
+  setFollow(false);
+  iso.reset();
+}
+$('btn-reset').addEventListener('click', resetView);
 ui.outline.addEventListener('change', () => (pipeline.uniforms.outlineOn.value = ui.outline.checked ? 1 : 0));
 ui.dither.addEventListener('change', () => (pipeline.uniforms.dither.value = ui.dither.checked ? 0.035 : 0));
 ui.bright.addEventListener('input', () => {
@@ -216,7 +247,9 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'l') launch();
   else if (k === 'q') iso.rotate(-1);
   else if (k === 'e') iso.rotate(1);
-  else if (k === 'r') iso.reset();
+  else if (k === 'r') resetView();
+  else if (k === 'f') setFollow(!state.follow);
+  else if (k === 'v') setRaw(!state.raw);
   else if (k === 'o') {
     ui.outline.checked = !ui.outline.checked;
     ui.outline.dispatchEvent(new Event('change'));
@@ -294,12 +327,16 @@ function frame() {
   trainBatch.commit();
   dynamic.commit();
   fx.commit();
+  if (state.follow) {
+    // Track the middle car; pixel snapping in the camera keeps the scrolling world crisp.
+    iso.target.lerp(train.cars[1].frame.p, 1 - Math.exp(-dt * 5));
+  }
   iso.update(dt);
   updateClouds(state.time);
   pipeline.render(scene, iso.camera, iso.pixelWorld);
 
   colourTimer -= dt;
-  if (colourTimer <= 0) {
+  if (colourTimer <= 0 && !state.raw) {
     colourTimer = 1;
     const seen = countScreenColours();
     ui.colours.textContent = `${seen.size} / ${PALETTE.length}`;
@@ -314,7 +351,7 @@ function frame() {
 }
 
 // Debug/automation hooks.
-window.__hammerhead = { train, people, iso, pipeline, track, launch, state, palette: PALETTE, lastColours: null };
+window.__hammerhead = { train, people, iso, pipeline, track, launch, state, setRaw, setFollow, palette: PALETTE, lastColours: null };
 
 $('loading').remove();
 syncZoomUi();

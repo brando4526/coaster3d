@@ -48,6 +48,9 @@ Requires Node 18+ (Vite 5).
      every depth discontinuity, with a threshold scaled to the world size of a pixel so flat slopes don't outline.
 3. The low-res canvas is upscaled with `image-rendering: pixelated` at an integer device-pixel scale.
 
+**Raw 3D** mode replaces this pipeline: the scene renders at full device resolution into a 4× MSAA target and is
+output with only brightness/intensity and sRGB encoding applied (the on-screen colour counter is disabled there).
+
 The palette is generated in `src/palette.js` from OKLCh ramps (hue-shifted shadows/highlights) and gamut-mapped
 into sRGB; the module throws if it ever exceeds 64 entries. The side panel shows the palette and counts the unique
 colours currently on screen (read back from the framebuffer once per second).
@@ -61,12 +64,14 @@ colours currently on screen (read back from the framebuffer once per second).
 | Auto-dispatch | Launch automatically whenever the train is ready |
 | Zoom slider / mouse wheel / `+` `-` | Orthographic zoom (0.6×–6×) |
 | ⟲ / ⟳ / `Q` `E` | Rotate 90°, always landing on a true-isometric angle |
+| Follow coaster cars / `F` | Camera tracks the middle car (stays orthographic isometric; panning releases it) |
 | Drag / right-drag (or shift-drag) | Orbit (snaps back to isometric on release) / pan |
-| **Reset view** / `R` | Fit the whole diorama |
+| **Reset view** / `R` | Fit the whole diorama (also stops following) |
+| Raw 3D / `V` | Bypass the pixel filter: full-resolution MSAA render with no palette, outlines or dither |
 | Depth outlines / `O` | Toggle outlines |
 | Ordered dithering | Toggle Bayer dithering |
 | Brightness, Palette intensity | Pre-quantisation exposure and OKLab chroma scale (output stays within the palette) |
-| Pixel size | 2–6 screen pixels per art pixel |
+| Pixel size | 2–6 screen pixels per art pixel (default 2) |
 
 ## Project layout
 

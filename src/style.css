@@ -53,6 +53,15 @@ body {
   image-rendering: crisp-edges;
 }
 
+body.raw #scene {
+  image-rendering: auto;
+}
+
+body.raw .pixel-only {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #loading {
   position: absolute;
   inset: 0;

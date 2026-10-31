@@ -15,6 +15,10 @@ const fragmentShader = /* glsl */ `
 
   uniform sampler2D tColor;
   uniform sampler2D tDepth;
+  uniform sampler2D tRaw;
+  uniform float rawMode;
+  uniform vec3 skyTopLin;
+  uniform vec3 skyBottomLin;
   uniform vec2 texel;
   uniform float cameraNear;
   uniform float cameraFar;
@@ -42,6 +46,27 @@ const fragmentShader = /* glsl */ `
       0.0259040371 * lms.x + 0.7827717662 * lms.y - 0.8086757660 * lms.z);
   }
 
+  vec3 oklabToLinear(vec3 lab) {
+    vec3 lms = vec3(
+      lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z,
+      lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z,
+      lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z);
+    lms = lms * lms * lms;
+    return vec3(
+      4.0767416621 * lms.x - 3.3077115913 * lms.y + 0.2309699292 * lms.z,
+      -1.2684380046 * lms.x + 2.6097574011 * lms.y - 0.3413193965 * lms.z,
+      -0.0041960863 * lms.x - 0.7034186147 * lms.y + 1.7076147010 * lms.z);
+  }
+
+  vec3 linearToSrgb(vec3 c) {
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  }
+
+  // Gentle shoulder so bright highlights keep their hue instead of clipping to white.
+  vec3 shoulder(vec3 c) {
+    return c / (1.0 + 0.12 * max(max(c.r, c.g), c.b)) * 1.12;
+  }
+
   float bayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
   float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
 
@@ -51,15 +76,26 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
+    if (rawMode > 0.5) {
+      // Raw 3D: full-resolution MSAA render, unquantised. The target is cleared to transparent black,
+      // so alpha is coverage and the sky composites under anti-aliased edges.
+      vec4 s = texture2D(tRaw, vUv);
+      vec3 c = shoulder(max(s.rgb * exposure, vec3(0.0)));
+      vec3 lab = linearToOklab(c);
+      lab.yz *= intensity;
+      c = max(oklabToLinear(lab), vec3(0.0));
+      c += mix(skyBottomLin, skyTopLin, smoothstep(0.05, 0.95, vUv.y)) * (1.0 - s.a);
+      gl_FragColor = vec4(linearToSrgb(clamp(c, 0.0, 1.0)), 1.0);
+      return;
+    }
+
     float raw = texture2D(tDepth, vUv).r;
     vec3 lab;
     if (raw >= 0.999999) {
       lab = mix(skyBottom, skyTop, smoothstep(0.05, 0.95, vUv.y));
     } else {
       vec3 c = texture2D(tColor, vUv).rgb * exposure;
-      // Gentle shoulder so bright highlights keep their hue instead of clipping to white.
-      c = c / (1.0 + 0.12 * max(max(c.r, c.g), c.b));
-      lab = linearToOklab(c * 1.12);
+      lab = linearToOklab(shoulder(c));
     }
     lab.yz *= intensity;
     lab.x += (bayer4(gl_FragCoord.xy) - 0.5) * dither;
@@ -105,9 +141,19 @@ export class PixelPipeline {
     this.target.depthTexture = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
 
     const [skyTop, skyBottom] = [0x79c2e7, 0xcceffb].map((h) => new THREE.Vector3(...oklabOfHex(h)));
+    const [skyTopLin, skyBottomLin] = [0x79c2e7, 0xcceffb].map((h) => {
+      const c = new THREE.Color().setHex(h);
+      return new THREE.Vector3(c.r, c.g, c.b);
+    });
+    this.raw = false;
+    this.rawTarget = null;
     this.uniforms = {
       tColor: { value: this.target.texture },
       tDepth: { value: this.target.depthTexture },
+      tRaw: { value: null },
+      rawMode: { value: 0 },
+      skyTopLin: { value: skyTopLin },
+      skyBottomLin: { value: skyBottomLin },
       texel: { value: new THREE.Vector2(1, 1) },
       cameraNear: { value: 0.1 },
       cameraFar: { value: 1000 },
@@ -136,11 +182,30 @@ export class PixelPipeline {
     this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
 
+  /** Pixel mode renders at (width, height); raw mode renders the same size at full device resolution. */
   setSize(width, height) {
     this.width = width;
     this.height = height;
-    this.target.setSize(width, height);
-    this.uniforms.texel.value.set(1 / width, 1 / height);
+    if (this.raw) {
+      if (!this.rawTarget) {
+        this.rawTarget = new THREE.WebGLRenderTarget(width, height, {
+          type: THREE.HalfFloatType,
+          samples: 4,
+          generateMipmaps: false,
+          depthBuffer: true,
+        });
+        this.uniforms.tRaw.value = this.rawTarget.texture;
+      }
+      this.rawTarget.setSize(width, height);
+    } else {
+      this.target.setSize(width, height);
+      this.uniforms.texel.value.set(1 / width, 1 / height);
+    }
+  }
+
+  setRaw(raw) {
+    this.raw = raw;
+    this.uniforms.rawMode.value = raw ? 1 : 0;
   }
 
   render(scene, camera, pixelWorld) {
@@ -149,7 +214,7 @@ export class PixelPipeline {
     this.uniforms.cameraFar.value = camera.far;
     // Planar surfaces change depth by at most ~1.5 px-widths per pixel in true isometric view.
     this.uniforms.outlineThreshold.value = Math.max(0.08, pixelWorld * 2.6);
-    r.setRenderTarget(this.target);
+    r.setRenderTarget(this.raw ? this.rawTarget : this.target);
     r.render(scene, camera);
     r.setRenderTarget(null);
     r.render(this.postScene, this.postCamera);

@@ -92,6 +92,7 @@ export class IsoCamera {
     el.addEventListener('pointerdown', (e) => {
       const pan = e.button === 2 || e.button === 1 || e.shiftKey;
       this.dragging = { mode: pan ? 'pan' : 'rotate', x: e.clientX, y: e.clientY, moved: 0 };
+      if (pan) this.onPanStart?.();
       el.setPointerCapture(e.pointerId);
       el.classList.add(pan ? 'panning' : 'rotating');
     });

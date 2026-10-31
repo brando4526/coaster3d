@@ -47,21 +47,23 @@
             <button id="btn-rot-right" type="button" title="Rotate 90° (E)">90° ⟳</button>
             <button id="btn-reset" type="button" title="Reset view (R)">Reset view</button>
           </div>
+          <label class="check"><input id="chk-follow" type="checkbox" /> Follow coaster cars</label>
           <p class="hint">Orthographic true-isometric (35.26° / 45°). Drag to orbit (snaps back to isometric), right-drag to pan, wheel to zoom.</p>
         </div>
 
         <div class="card">
           <h2>Rendering</h2>
-          <label class="check"><input id="chk-outline" type="checkbox" checked /> Depth outlines</label>
-          <label class="check"><input id="chk-dither" type="checkbox" checked /> Ordered dithering</label>
+          <label class="check"><input id="chk-raw" type="checkbox" /> Raw 3D (bypass pixel filter)</label>
+          <label class="check pixel-only"><input id="chk-outline" type="checkbox" checked /> Depth outlines</label>
+          <label class="check pixel-only"><input id="chk-dither" type="checkbox" checked /> Ordered dithering</label>
           <label class="slider">Brightness <output id="out-bright">1.00</output>
             <input id="rng-bright" type="range" min="0.5" max="1.6" step="0.01" value="1" />
           </label>
           <label class="slider">Palette intensity <output id="out-intensity">1.00</output>
             <input id="rng-intensity" type="range" min="0" max="1.6" step="0.01" value="1" />
           </label>
-          <label class="slider">Pixel size <output id="out-pixel">3 px</output>
-            <input id="rng-pixel" type="range" min="2" max="6" step="1" value="3" />
+          <label class="slider pixel-only">Pixel size <output id="out-pixel">2 px</output>
+            <input id="rng-pixel" type="range" min="2" max="6" step="1" value="2" />
           </label>
         </div>
 
@@ -71,7 +73,7 @@
           <p class="hint"><span id="palette-count">64</span> colours, nearest-match in OKLab. On screen now: <strong id="screen-colours">–</strong></p>
         </div>
 
-        <p class="keys">Keys: <kbd>Space</kbd> play/pause · <kbd>L</kbd> launch · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset · <kbd>O</kbd> outlines</p>
+        <p class="keys">Keys: <kbd>Space</kbd> play/pause · <kbd>L</kbd> launch · <kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>R</kbd> reset · <kbd>F</kbd> follow · <kbd>O</kbd> outlines · <kbd>V</kbd> raw 3D</p>
       </aside>
     </main>
     <script type="module" src="./src/main.js"></script>
