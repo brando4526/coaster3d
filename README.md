@@ -14,6 +14,10 @@ npm run build    # production build in dist/
 
 Requires Node 18+ (Vite 5).
 
+It also runs from any static web server (e.g. Apache/XAMPP): serve the project folder itself (an import map in
+`index.html` loads `three` from `node_modules/`, so run `npm install` first), or serve the `dist/` build, which uses
+relative paths and works from any subfolder.
+
 ## What's in the scene
 
 - **Track** – 336-unit circuit built by a turtle integrator along the riders' heartline: LSM launch,
@@ -49,11 +53,10 @@ Requires Node 18+ (Vite 5).
 3. The low-res canvas is upscaled with `image-rendering: pixelated` at an integer device-pixel scale.
 
 **Raw 3D** mode replaces this pipeline: the scene renders at full device resolution into a 4× MSAA target and is
-output with only brightness/intensity and sRGB encoding applied (the on-screen colour counter is disabled there).
+output with only brightness/intensity and sRGB encoding applied.
 
 The palette is generated in `src/palette.js` from OKLCh ramps (hue-shifted shadows/highlights) and gamut-mapped
-into sRGB; the module throws if it ever exceeds 64 entries. The side panel shows the palette and counts the unique
-colours currently on screen (read back from the framebuffer once per second).
+into sRGB; the module throws if it ever exceeds 64 entries.
 
 ## Controls
 

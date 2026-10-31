@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hammerhead — Pixel Voxel Coaster Diorama</title>
+    <!-- Lets the unbundled source run from a plain static server (e.g. Apache); Vite resolves 'three' itself. -->
+    <script type="importmap">
+      { "imports": { "three": "./node_modules/three/build/three.module.js" } }
+    </script>
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
