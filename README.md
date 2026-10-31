@@ -43,6 +43,9 @@ relative paths and works from any subfolder.
 
 ## Rendering pipeline
 
+**Raw 3D** is on by default: the scene renders at full device resolution into a 4× MSAA target and is output with only
+brightness/intensity and sRGB encoding applied. Turn it off (checkbox or `V`) for the pixel-art pipeline, which replaces it:
+
 1. The scene renders into a low-resolution render target (`viewport / pixel size`) with a depth texture.
 2. A full-screen pass:
    - converts each pixel to **OKLab**, applies brightness and palette-intensity (chroma) scaling and an
@@ -51,9 +54,6 @@ relative paths and works from any subfolder.
    - draws dark **depth outlines** (one low-res pixel, i.e. pixel-size screen pixels thick) on the far side of
      every depth discontinuity, with a threshold scaled to the world size of a pixel so flat slopes don't outline.
 3. The low-res canvas is upscaled with `image-rendering: pixelated` at an integer device-pixel scale.
-
-**Raw 3D** mode replaces this pipeline: the scene renders at full device resolution into a 4× MSAA target and is
-output with only brightness/intensity and sRGB encoding applied.
 
 The palette is generated in `src/palette.js` from OKLCh ramps (hue-shifted shadows/highlights) and gamut-mapped
 into sRGB; the module throws if it ever exceeds 64 entries.
@@ -70,7 +70,7 @@ into sRGB; the module throws if it ever exceeds 64 entries.
 | Follow coaster cars / `F` | Camera tracks the middle car (stays orthographic isometric; panning releases it) |
 | Drag / right-drag (or shift-drag) | Orbit (snaps back to isometric on release) / pan |
 | **Reset view** / `R` | Fit the whole diorama (also stops following) |
-| Raw 3D / `V` | Bypass the pixel filter: full-resolution MSAA render with no palette, outlines or dither |
+| Raw 3D / `V` | Bypass the pixel filter: full-resolution MSAA render with no palette, outlines or dither (on by default; turn it off for the pixel-art look) |
 | Depth outlines / `O` | Toggle outlines |
 | Ordered dithering | Toggle Bayer dithering |
 | Brightness, Palette intensity | Pre-quantisation exposure and OKLab chroma scale (output stays within the palette) |

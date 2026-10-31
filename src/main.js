@@ -114,7 +114,7 @@ const state = {
   playing: true,
   time: 0,
   pixelSize: 2,
-  raw: false,
+  raw: true,
   follow: false,
   autoLaunch: false,
   autoTimer: 0,
@@ -283,7 +283,8 @@ function updateUi() {
 }
 
 // ---- Main loop ----
-resize();
+// Applies the default render mode to the UI and pipeline; setRaw ends with resize(), which sizes the render targets.
+setRaw(state.raw);
 let lastNow = performance.now();
 let uiTimer = 0;
 function frame() {
